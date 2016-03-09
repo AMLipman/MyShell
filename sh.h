@@ -18,6 +18,7 @@ void quit_sig_handler(int sig);
 char *SetDir(char **args,int currentPos);
 void PrintPrompt();
 void PrintPrecurser(char *arg);
+char **CheckWCChars(char **args);
 
 
 
