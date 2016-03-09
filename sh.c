@@ -127,20 +127,26 @@ int sh( int argc, char **argv, char **envp )
               }
           }
           else if (strcmp(args[0],"cd")==0){
-              char* dir = args[1];
-              char* tempdir;
-              if (currentPos>1){
-                  for(i=2; i<currentPos;i++){
-                      tempdir = malloc(strlen(dir));
-                      strcpy(tempdir,dir);
-                      dir = malloc(strlen(tempdir)+strlen(args[i])+2);
-                      strcpy(dir,tempdir);
-                      strcat(dir," ");
-                      strcat(dir,args[i]);
+              if (args[2]== NULL){
+                  char* dir = args[1];
+                  char* tempdir;
+                  if (currentPos>1){
+                      for(i=2; i<currentPos;i++){
+                          tempdir = malloc(strlen(dir));
+                          strcpy(tempdir,dir);
+                          dir = malloc(strlen(tempdir)+strlen(args[i])+2);
+                          strcpy(dir,tempdir);
+                          strcat(dir," ");
+                          strcat(dir,args[i]);
+                      }
                   }
+                  previousDirectory = cd(dir,previousDirectory);
+                  //free(tempdir);
               }
-              previousDirectory = cd(dir,previousDirectory);
-              //free(tempdir);
+              else{
+                  printf("cd: Too many arguments\n");
+              }
+              
           }
           else if (strcmp(args[0],"pwd")==0){
               printf("%s\n",getcwd(NULL, PATH_MAX+1));
@@ -318,14 +324,17 @@ int sh( int argc, char **argv, char **envp )
               
           }
           else if (access(args[0],X_OK)==0){
+              printf("%s\n",args[0]);
               int status;
               pid_t pid;
               pid = fork();
+              
               if (pid==0){
                   execve(args[0], args, envp );
               }
               else {
                   pid_gl = pid;
+                  printf("%d",pid);
                   waitpid(pid,&status, WEXITSTATUS(status));
               }
           }
@@ -334,6 +343,10 @@ int sh( int argc, char **argv, char **envp )
           /* do fork(), execve() and waitpid() */
           else if (access(which(args[0],pathlist),X_OK)==0){
               int status;
+              args = CheckWCChars(args);
+              for (i=0;args[i]!=NULL;i++){
+                  printf("%s\n",args[i]);
+              }
               pid_t pid;
               pid = fork();
               if (pid==0){
@@ -341,7 +354,6 @@ int sh( int argc, char **argv, char **envp )
               }
               else {
                   pid_gl = pid;
-                  printf("Exit status is: %d\n",WEXITSTATUS(status));
                   waitpid(pid,&status, WEXITSTATUS(status));
                   
               }
@@ -354,7 +366,10 @@ int sh( int argc, char **argv, char **envp )
       }
       else{
           if (condition == NULL){
-              printf("\n");
+              if (commandline[0]=='\0'){
+                  printf("\n");
+              }
+              
               clearerr(stdin);
           }
       }
@@ -374,6 +389,50 @@ int sh( int argc, char **argv, char **envp )
 } /* sh() */
 
 /* Helper Functions*/
+
+char **CheckWCChars(char **args){
+    char **newArgs = calloc(MAXARGS,sizeof(char*));
+    newArgs[0] = args[0];
+    int NACounter = 1;
+    
+    bool wildcardStar = false;
+    bool wildcardQmark = false;
+    char temp[256];
+    int k;
+    for(k=1;args[k]!=NULL;k++){
+        char *temp = malloc(sizeof(args[k]));
+        strcpy(temp,args[k]);
+        int i;
+        for(i=0; temp[i]!='\0';i++){
+            if (temp[i]== '*' && !wildcardStar && !wildcardQmark){
+                glob_t globWC;
+                glob(temp,GLOB_NOCHECK,NULL,&globWC);
+                int j;
+                for(j=0;globWC.gl_pathv[j]!=NULL;j++){
+                    newArgs[NACounter] = globWC.gl_pathv[j];
+                    NACounter++;
+                }
+                wildcardStar = true;
+            }
+            
+            else if (temp[i]== '?' && !wildcardQmark && !wildcardStar){
+                glob_t globWC;
+                glob(temp,GLOB_NOCHECK,NULL,&globWC);
+                int j;
+                for(j=0;globWC.gl_pathv[j]!=NULL;j++){
+                    newArgs[NACounter] = globWC.gl_pathv[j];
+                    NACounter++;
+                }
+                wildcardQmark = true;
+            }
+        }
+        if (!wildcardQmark && !wildcardStar){
+            newArgs[NACounter] = args[k];
+            NACounter++;
+        }
+    }
+    return newArgs;
+}
 
 void PrintPrompt(){
     printf("%s [%s]>",prompt,getcwd(NULL, PATH_MAX+1));
@@ -418,21 +477,27 @@ char *which(char *command, struct pathelement *pathlist )
 	char* notFoundFull;
 	struct pathelement * head = pathlist;
 	
-	while (head!=NULL){
-		filePath = malloc(strlen(head->element)+2+strlen(command)); 
-		strcpy(filePath, head->element); /* copy name into the new var */
-		strcat(filePath,"/");
-		strcat(filePath, command);
-		if( access( filePath, F_OK ) != -1 ) {
-		 	return filePath;
-		} 
-	head = head->next;
-	}
-	notFoundFull = malloc(strlen(command)+1+strlen(notFound));
-	strcpy(notFoundFull,command);
-	strcat(notFoundFull,notFound);
-    //free(filePath);
-	return notFoundFull;
+    if (command == NULL){
+        return("which: Too few arguments");
+    }
+    else{
+        while (head!=NULL){
+            filePath = malloc(strlen(head->element)+2+strlen(command));
+            strcpy(filePath, head->element); /* copy name into the new var */
+            strcat(filePath,"/");
+            strcat(filePath, command);
+            if( access( filePath, F_OK ) != -1 ) {
+                return filePath;
+            }
+            head = head->next;
+        }
+        notFoundFull = malloc(strlen(command)+1+strlen(notFound));
+        strcpy(notFoundFull,command);
+        strcat(notFoundFull,notFound);
+        //free(filePath);
+        return notFoundFull;
+    }
+	
 	
 
 } /* which() */
@@ -444,25 +509,31 @@ char *where(char *command, struct pathelement *pathlist )
 	struct pathelement * head = pathlist;
 	int firstTime = 1;
 	
-	while (head!=NULL){
-		filePath = malloc(strlen(head->element)+2+strlen(command)); 
-		strcpy(filePath, head->element); /* copy name into the new var */
-		strcat(filePath,"/");
-		strcat(filePath, command); 
-		if( access( filePath, F_OK ) != -1 ) {
-			result = malloc(strlen(result) + 2 + strlen(filePath));
-			if (firstTime){
-				firstTime = 0;
-			}
-			else{
-				strcat(result,"\n");
-			}
-			strcat(result,filePath);
-		} 
-	head = head->next;
-	}
-    //free(filePath);
-	return result;
+    if (command == NULL){
+        return("where: Too few arguments");
+    }
+    else{
+        while (head!=NULL){
+            filePath = malloc(strlen(head->element)+2+strlen(command));
+            strcpy(filePath, head->element); /* copy name into the new var */
+            strcat(filePath,"/");
+            strcat(filePath, command);
+            if( access( filePath, F_OK ) != -1 ) {
+                result = malloc(strlen(head->element) + 2 + strlen(filePath));
+                if (firstTime){
+                    firstTime = 0;
+                }
+                else{
+                    strcat(result,"\n");
+                }
+                strcat(result,filePath);
+            } 
+            head = head->next;
+        }
+        //free(filePath);
+        return result;
+    }
+	
 } /* where() */
 
 char* cd(char* dest,char* previousDirectory){
@@ -484,7 +555,7 @@ char* cd(char* dest,char* previousDirectory){
 
 void list ( char *dir )
 {
-	
+    
 	if (dir == NULL){
 		DIR           *d;
 		struct dirent *dir;
@@ -500,70 +571,26 @@ void list ( char *dir )
         }
 	}
 	else{
-		const char colon[3] = ":\n";
-		char* currentDir;
-        bool wildcardStar;
-        bool wildcardQmark;
-		currentDir = strtok(dir,colon);
-		while (currentDir != NULL){
-            wildcardStar = false;
-            wildcardQmark = false;
-            char temp[256];
-            strcpy(temp,currentDir);
-            int i;
-            for(i=0; temp[i]!='\0';i++){
-                if (temp[i]== '*' && !wildcardStar && !wildcardQmark){
-                    glob_t globWC;
-                    glob(temp,GLOB_NOCHECK,NULL,&globWC);
-                    int j;
-                    for(j=0;globWC.gl_pathv[j]!=NULL;j++){
-                        if (strcmp(globWC.gl_pathv[j],temp)!=0){
-                            printf("%s\n",globWC.gl_pathv[j]);
-                        }
-                        else{
-                            printf("Files matching expression[%s] were not found\n", temp);
-                        }
-                    }
-                    wildcardStar = true;
+        const char colon[3] = ":\n";
+        char *currentDir = strtok(dir,colon);
+        while(currentDir !=NULL){
+            DIR           *d;
+            struct dirent *dir;
+            d = opendir(currentDir);
+            if (d)	{
+                printf("\n%s:\n",currentDir);
+                while ((dir = readdir(d)) != NULL) {
+                    printf("%s\n", dir->d_name);
                 }
-                else if (temp[i]== '?' && !wildcardQmark && !wildcardStar){
-                    glob_t globWC;
-                    glob(temp,GLOB_NOCHECK,NULL,&globWC);
-                    int j;
-                    for(j=0;globWC.gl_pathv[j]!=NULL;j++){
-                        if(strcmp(globWC.gl_pathv[j],temp)!=0){
-                            printf("%s\n",globWC.gl_pathv[j]);
-                        }
-                        else{
-                            printf("Files matching expression [%s] were not found\n", temp);
-                        }
-                    }
-                    wildcardQmark = true;
-                    
-                }
+                closedir(d);
+            }
+            else{
+                perror("opendir");
             }
             
-            if (!wildcardStar && !wildcardQmark){
-                DIR           *d;
-                struct dirent *dir;
-                d = opendir(currentDir);
-                if (d)	{
-                    printf("\n%s:\n",currentDir);
-                    while ((dir = readdir(d)) != NULL) {
-                        printf("%s\n", dir->d_name);
-                    }
-                    closedir(d);
-                }
-                else{
-                    perror("opendir");
-                }
-                
-            }
             currentDir = strtok(NULL,colon);
-			
         }
-        //free(currentDir);
-	}
+    }
 
 } /* list() */
 
