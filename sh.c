@@ -119,13 +119,21 @@ int sh( int argc, char **argv, char **envp )
 				break;
 			}
 			else if (strcmp(args[0],"which")==0){
-				printf("%s\n",which(args[1],pathlist));
+                int i;
+                for (i=1;args[i]!=NULL;i++){
+                   printf("%s\n",which(args[i],pathlist));
+                }
+				
 			}
 			else if (strcmp(args[0],"where")==0){
-				char* result = where(args[1],pathlist);
-				if (result!=NULL){
-					printf("%s\n",result);
-				}
+                int i;
+                for (i=1;args[i]!=NULL;i++){
+                    char* result = where(args[i],pathlist);
+                    if (result!=NULL){
+                        printf("%s\n",result);
+                    }
+                }
+				
 			}
 			else if (strcmp(args[0],"cd")==0){
 				if (args[2]== NULL){
@@ -343,7 +351,7 @@ int sh( int argc, char **argv, char **envp )
 
 			}
 			else if (access(args[0],X_OK)==0){
-				printf("%s\n",args[0]);
+                printf("got here1\n");
 				int status;
 				pid_t pid;
 				pid = fork();
@@ -353,7 +361,6 @@ int sh( int argc, char **argv, char **envp )
 				}
 				else {
 					pid_gl = pid;
-					printf("%d",pid);
 					waitpid(pid,&status, WEXITSTATUS(status));
 				}
 			}
@@ -361,11 +368,9 @@ int sh( int argc, char **argv, char **envp )
 			/* find it */
 			/* do fork(), execve() and waitpid() */
 			else if (access(which(args[0],pathlist),X_OK)==0){
+                printf("got here2\n");
 				int status;
 				args = CheckWCChars(args);
-				for (i=0;args[i]!=NULL;i++){
-					printf("%s\n",args[i]);
-				}
 				pid_t pid;
 				pid = fork();
 				if (pid==0){
@@ -380,7 +385,14 @@ int sh( int argc, char **argv, char **envp )
 
 
 			else {
-				fprintf(stderr, "%s: Command not found.\n", args[0]);
+                int i;
+                if (args[0][0]== '.'||args[0][0]== '/'){
+                    fprintf(stderr,"%s: Path does not exist\n",args[0]);
+                }
+                else{
+                    fprintf(stderr, "%s: Command not found.\n", args[0]);
+                }
+				
 			}
 		}
 		else{
@@ -450,6 +462,7 @@ char **CheckWCChars(char **args){
 			NACounter++;
 		}
 	}
+    newArgs[NACounter]= 0;
 	return newArgs;
 }
 
