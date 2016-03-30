@@ -1,0 +1,193 @@
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
+#include <limits.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <pwd.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include "sh.h"
+
+int sh( int argc, char **argv, char **envp )
+{
+  char *prompt = calloc(PROMPTMAX, sizeof(char));
+  char *commandline = calloc(MAX_CANON, sizeof(char));
+  char *command, *arg, *commandpath, *p, *pwd, *owd;
+  char **args = calloc(MAXARGS, sizeof(char*));
+  int uid, i, status, argsct, go = 1;
+  struct passwd *password_entry;
+  char *homedir;
+  struct pathelement *pathlist;
+
+  uid = getuid();
+  password_entry = getpwuid(uid);               /* get passwd info */
+  homedir = password_entry->pw_dir;		/* Home directory to start
+						  out with*/
+     
+  if ( (pwd = getcwd(NULL, PATH_MAX+1)) == NULL )
+  {
+    perror("getcwd");
+    exit(2);
+  }
+  owd = calloc(strlen(pwd) + 1, sizeof(char));
+  memcpy(owd, pwd, strlen(pwd));
+  prompt[0] = ' '; prompt[1] = '\0';
+
+  /* Put PATH into a linked list */
+  pathlist = get_path();
+
+  while ( go )
+  {
+      /* print your prompt */
+      printf("%s [%s]>",prompt,getcwd(NULL, PATH_MAX+1));
+      char **args = calloc(MAXARGS, sizeof(char*));
+      /* get command line and process */
+      fflush(stdin);
+      fflush(stdout);
+      const char space[3] = " \n";
+      const char* newLine = "\n";
+      
+      char *commandline = calloc(MAX_CANON, sizeof(char));
+      char *condition = fgets(commandline,MAX_CANON,stdin);
+      if (strcmp(commandline,"\n")!=0 && condition!=NULL){
+          // new stuff
+          commandline = strtok(commandline,newLine);
+          tail = addToHistory(tail,commandline);
+          
+          //CHECK FOR ALIAS AND REPLACE COMMAND
+          char* currentAlias = malloc(256);
+          char* currentCmd = malloc(256);
+          const char* colon = ":\n";
+          int i = 0;
+          while(aliases[i]){
+              currentAlias = strtok(aliases[i],colon);
+              currentCmd = strtok(NULL,colon);
+              aliases[i] = malloc(256);
+              strcpy(aliases[i],currentAlias);
+              strcat(aliases[i],":");
+              strcat(aliases[i],currentCmd);
+              if (strcmp(commandline,currentAlias)==0){
+                  commandline = calloc(MAX_CANON, sizeof(char));
+                  strcpy(commandline,currentCmd);
+              }
+              i++;
+          }
+          
+          
+          // Parsing arguments
+          currentArg = strtok(commandline,space);
+          int currentPos = 0;
+          
+          while (currentArg != NULL){
+              args[currentPos] = currentArg;
+              currentPos++;
+              currentArg = strtok(NULL,space);
+          }
+          
+          PrintPrecurser(args[0]);
+      }
+    /* print your prompt */
+
+    /* get command line and process */
+
+    /* check for each built in command and implement */
+
+     /*  else  program to exec */
+      else{
+       /* find it */
+       /* do fork(), execve() and waitpid() */
+          if (access(which(args[0],pathlist),X_OK)==0){
+              printf("got here2\n");
+              int status;
+              args = CheckWCChars(args);
+              pid_t pid;
+              pid = fork();
+              if (pid==0){
+                  execve(which(args[0],pathlist), args, envp );
+              }
+              else {
+                  pid_gl = pid;
+                  waitpid(pid,&status, WEXITSTATUS(status));
+                  
+              }
+          }
+          else
+              fprintf(stderr, "%s: Command not found.\n", args[0]);
+    }
+  }
+  return 0;
+} /* sh() */
+
+char **CheckWCChars(char **args){
+    char **newArgs = calloc(MAXARGS,sizeof(char*));
+    newArgs[0] = args[0];
+    int NACounter = 1;
+    
+    bool wildcardStar = false;
+    bool wildcardQmark = false;
+    char temp[256];
+    int k;
+    for(k=1;args[k]!=NULL;k++){
+        char *temp = malloc(sizeof(args[k]));
+        strcpy(temp,args[k]);
+        int i;
+        for(i=0; temp[i]!='\0';i++){
+            if (temp[i]== '*' && !wildcardStar && !wildcardQmark){
+                glob_t globWC;
+                glob(temp,GLOB_NOCHECK,NULL,&globWC);
+                int j;
+                for(j=0;globWC.gl_pathv[j]!=NULL;j++){
+                    newArgs[NACounter] = globWC.gl_pathv[j];
+                    NACounter++;
+                }
+                wildcardStar = true;
+            }
+            
+            else if (temp[i]== '?' && !wildcardQmark && !wildcardStar){
+                glob_t globWC;
+                glob(temp,GLOB_NOCHECK,NULL,&globWC);
+                int j;
+                for(j=0;globWC.gl_pathv[j]!=NULL;j++){
+                    newArgs[NACounter] = globWC.gl_pathv[j];
+                    NACounter++;
+                }
+                wildcardQmark = true;
+            }
+        }
+        if (!wildcardQmark && !wildcardStar){
+            newArgs[NACounter] = args[k];
+            NACounter++;
+        }
+    }
+    newArgs[NACounter]= 0;
+    return newArgs;
+}
+
+void PrintPrompt(){
+    printf("%s [%s]>",prompt,getcwd(NULL, PATH_MAX+1));
+}
+
+void PrintPrecurser(char *arg){
+    printf("[Executing: %s]\n",arg);
+}
+
+char *which(char *command, struct pathelement *pathlist )
+{
+   /* loop through pathlist until finding command and return it.  Return
+   NULL when not found. */
+
+} /* which() */
+
+char *where(char *command, struct pathelement *pathlist )
+{
+  /* similarly loop through finding all locations of command */
+} /* where() */
+
+void list ( char *dir )
+{
+  /* see man page for opendir() and readdir() and print out filenames for
+  the directory passed */
+} /* list() */
