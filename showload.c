@@ -40,7 +40,7 @@ int main()
 */
 int get_load(double *loads)
 {
-#ifdef HAVE_KSTAT
+printf("have KSTAT2");
   kstat_ctl_t *kc;
   kstat_t *ksp;
   kstat_named_t *kn;
@@ -90,9 +90,5 @@ int get_load(double *loads)
 
   kstat_close(kc);
   return 0;
-#else
-  /* yes, this isn't right */
-  loads[0] = loads[1] = loads[2] = 0;
-  return -1;
-#endif
+
 } /* get_load() */
