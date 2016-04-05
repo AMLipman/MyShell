@@ -17,38 +17,20 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <errno.h>
-#include <sys/wait.h>
 #include <utmpx.h>
-#include <glob.h>
+#include <sys/wait.h>
 #include <signal.h>
-#include <sys/param.h>
-#include <kstat.h>
-#include <sys/stat.h>
-#include <sys/time.h>
+#include <glob.h>
 #include <sys/types.h>
-#include <pthread.h>
-#include <time.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include "sh.h"
 
 pid_t pid_gl;
 char *prompt;
-int isThreadRunningGl = 0;
-float warnLoadGl = 0.0f;
-struct WatchMailNode *WMhead = NULL;
-struct WatchMailNode *WMtail = NULL;
-pthread_mutex_t WatchMailMutex;
-
-//This variable keeps track of how many background threads are active
 int runningBackgroundThreads;
-
-//This linked list contains all the users we are watching
 struct users* watchOn;
-
-//This mutex locks the users linked list
 pthread_mutex_t mutexOn;
-
-//This flag keeps track of whether or not we created a thread to watch users
 int watchUserThreadCreated = 0;
 
 
@@ -67,7 +49,7 @@ int sh( int argc, char **argv, char **envp )
 	struct pathelement *pathlist;
 	struct HistoryNode* tail = NULL;
 	char* previousDirectory = "";
-	char* background = malloc(1);
+	char* background = malloc(1);	
 	pthread_t threads[100];
 	int threadCurr = 0;
 	runningBackgroundThreads = 0;
@@ -76,8 +58,6 @@ int sh( int argc, char **argv, char **envp )
 	int noclobber = 0;
 	int noclobberProceed = 1;
 	int fid;
-
-	// These variables are used keep the standard inputs, outputs and error so we can restore them later
 	int saved_stdout;
 	int saved_stdin;
 	int saved_stderr;
@@ -128,7 +108,7 @@ int sh( int argc, char **argv, char **envp )
 			char* currentAlias = malloc(256);
 			char* currentCmd = malloc(256);
 			const char* colon = ":\n";
-			int i = 0;
+			i = 0;
 			while(aliases[i]){
 				currentAlias = strtok(aliases[i],colon);
 				currentCmd = strtok(NULL,colon);
@@ -153,31 +133,26 @@ int sh( int argc, char **argv, char **envp )
 				currentPos++;
 				currentArg = strtok(NULL,space);
 			}
-
-			// Check if the command ends with a &.  This will be used later to create background processes
 			background = &args[currentPos-1][strlen(args[currentPos-1]) - 1];
 			if (strcmp(background,"&")==0){
 				args[currentPos-1][strlen(args[currentPos-1])-1]='\0';
 				background = "&";
 			}
 
+			// Print precurser executing statement
 			PrintPrecurser(args[0]);
 			/* check for each built in command and implement */
 
-			// Check if we are doing any redirects and handle accordingly
 			i = -1;
 			while (args[++i]!=NULL){
-				//Check if we are redirecting standard output and overwritting
 				if (strcmp(args[i],">")==0){
-					//If no clobber is on do not let it overwrite the file
 					if (noclobber){
 						if( access( args[i+1], F_OK ) != -1 ) {
-							noclobberProceed = 0;
+   							noclobberProceed = 0;
 							printf("%s: File exists.\n",args[i+1]);
 							args[0]=NULL;
 						}
 					}
-					// Change the standard output to the file we want to redirect to
 					if (noclobberProceed){
 						redirectFlag = 1;
 						saved_stdout = dup(1);
@@ -191,17 +166,14 @@ int sh( int argc, char **argv, char **envp )
 						noclobberProceed = 1;
 					}
 				}
-				// Check if we are redirecting standard output and standard error and overwriting
 				else if (strcmp(args[i],">&")==0){
-					//if no clobber is on do not let it overwrite the file
 					if (noclobber){
 						if( access( args[i+1], F_OK ) != -1 ) {
-							noclobberProceed = 0;
+   							noclobberProceed = 0;
 							printf("%s: File exists.\n",args[i+1]);
 							args[0]=NULL;
 						}
 					}
-					//Change the standard output and standard error to the file we want to redirect to
 					if (noclobberProceed){
 						redirectFlag = 2;
 						saved_stdout = dup(1);
@@ -218,17 +190,14 @@ int sh( int argc, char **argv, char **envp )
 						noclobberProceed = 1;
 					}
 				}
-				//Check if we are redirecting standard output and appending
 				else if (strcmp(args[i],">>")==0){
-					//If no clobber is on do not let it create a new file
 					if (noclobber){
 						if( access( args[i+1], F_OK ) == -1 ) {
-							noclobberProceed = 0;
+   							noclobberProceed = 0;
 							printf("%s: No such file or directory.\n",args[i+1]);
 							args[0]=NULL;
 						}
 					}
-					//Change the standard output to the file we want to redirect to
 					if (noclobberProceed){
 						redirectFlag = 1;
 						saved_stdout = dup(1);
@@ -242,17 +211,14 @@ int sh( int argc, char **argv, char **envp )
 						noclobberProceed = 1;
 					}
 				}
-				//Check if we are redirecting standard output and standard error and appending
 				else if (strcmp(args[i],">>&")==0){
-					//If no clobber is on do not let it create a new file
 					if (noclobber){
 						if( access( args[i+1], F_OK ) == -1 ) {
-							noclobberProceed = 0;
+   							noclobberProceed = 0;
 							printf("%s: No such file or directory.\n",args[i+1]);
 							args[0]=NULL;
 						}
 					}
-					// Change the standard output and standard error to the file we want to redirect to
 					if (noclobberProceed){
 						redirectFlag = 2;
 						saved_stdout = dup(1);
@@ -269,9 +235,7 @@ int sh( int argc, char **argv, char **envp )
 						noclobberProceed = 1;
 					}
 				}
-				//Check if we are redirecting input to a command
 				else if (strcmp(args[i],"<")==0){
-					//Change the input to the command to come from the file we want it to
 					if( access( args[i+1], F_OK ) != -1 ) {
 						redirectFlag = 3;
 						saved_stdin = dup(0);
@@ -289,84 +253,12 @@ int sh( int argc, char **argv, char **envp )
 				}
 			}
 
-			//check if we are pipelining
-			int piped = 0;
-			for(i=0; args[i]!=NULL;i++){
-				if (strcmp(args[i],"|")==0 || strcmp(args[i],"|&")==0){
-					piped = 1;
-					char **args1 = calloc(i+1, sizeof(char*));
-					char **args2 = calloc(MAXARGS, sizeof(char*));
-
-					int j;
-					for (j=0;args[j]!=NULL;j++){
-						if (j<i){
-							args1[j] = args[j];
-						}
-					}
-
-					int z;
-					int y=0;
-					for (z=0;args[z]!=NULL;z++){
-						if (z>i){
-							args2[y] = args[z];
-							y++;
-						}
-					}
-
-					int pfds[2];
-					char buf[100];
-
-					pipe(pfds);
-
-					pid_t pid1;
-					pid1 = fork();
-					if (pid1 == 0){
-						close(1);// close stdout
-						dup(pfds[1]);// make pfds[1] stdout
-						close (pfds[0]);
-						if (strcmp(args[i],"|&")==0){
-							close(2);
-							dup(pfds[1]);
-						}
-						args = args1;
-					}
-					else{
-						pid_t pid2;
-						pid2 = fork();
-						if (pid2 == 0){
-							close(0);
-							dup(pfds[0]);
-							close(pfds[1]);
-							if (access(args2[0],X_OK)==0){
-								execve(args2[0], args2, envp);
-							}
-							else{
-								execve(which(args2[0],pathlist),args2,envp);
-							}
-						}
-						else{
-							close(pfds[0]);
-							close(pfds[1]);
-							waitpid(pid1,&status,0);//assumming that we want the parent to wait for both piped processess
-							waitpid(pid2,&status,0);
-							args[0]= NULL;
-						}
-					}
-
-
-				}
-			}
-
-			//If there are no arguments just print a new prompt
 			if (args[0] == NULL){
 			}
-
-			//If the user types exit we should exit from the shell
 			else if (strcmp(args[0],"exit")==0){
 				break;
 			}
 			
-			//If the user types noclobber toggle the noclobber flag
 			else if (strcmp(args[0],"noclobber")==0){
 				if (noclobber == 0){
 					noclobber = 1;
@@ -376,16 +268,14 @@ int sh( int argc, char **argv, char **envp )
 				}
 				printf("%d\n",noclobber);
 			}
-		
+			
 			else if (strcmp(args[0],"which")==0){
-				int i;
 				for (i=1;args[i]!=NULL;i++){
 					printf("%s\n",which(args[i],pathlist));
 				}
 
 			}
 			else if (strcmp(args[0],"where")==0){
-				int i;
 				for (i=1;args[i]!=NULL;i++){
 					char* result = where(args[i],pathlist);
 					if (result!=NULL){
@@ -607,209 +497,94 @@ int sh( int argc, char **argv, char **envp )
 					}
 					//free(newString);
 				}
-
 			}
 
-			else if (strcmp(args[0],"warnload")==0){
-				if (isThreadRunningGl ==1){
-					warnLoadGl = atof(args[1]);
-					printf("warnLoadGl in if:%f and args %s\n", warnLoadGl, args[1]);
-				}
-				else{
-					pthread_t tid1;
-					float param = atof(args[1]);
-					pthread_create(&tid1, NULL,warnLoadThread, (void *)&param);
-					isThreadRunningGl = 1;
-				}
-			}
-			else if (strcmp(args[0],"watchmail")==0){
-
-				if (args[1]!= NULL){
-					if (args[2] == NULL){
-						char *fileName = (char *)malloc(sizeof(char)*100);
-						fileName = NULL;
-						DIR           *d;
-						struct dirent *dir;
-						d = opendir(".");
-						if (d)	{
-							while ((dir = readdir(d)) != NULL) {
-								if (strcmp(args[1],dir->d_name) == 0){
-									fileName = dir->d_name;
-								}
-							}
-							closedir(d);
-						}
-						else{
-							perror("opendir");
-						}
-						if(fileName != NULL){
-							pthread_t tid1;
-							struct WatchMailThreadParams *params = (struct WatchMailThreadParams *)malloc(sizeof(struct WatchMailThreadParams));
-							params->filename = fileName;
-							params->tid = tid1;
-							pthread_create(&tid1,NULL, watchMailThread , params);
-
-						}
-						else{
-							printf("Error: File does not exist\n");
-						}
-
-					}
-					else if (strcmp(args[2],"off") == 0){
-						struct WatchMailNode *curr = WMhead;
-						struct WatchMailNode *prev = NULL;
-						while(curr != NULL){
-							if (strcmp(curr->filename,args[1])==0){
-								//cancel thread
-								pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
-								int error = pthread_cancel(curr->tid);
-								if (error == ESRCH){
-									printf("what?");
-								}
-								printf("error: %d\n", error);
-
-								//remove from list
-								if (prev ==NULL){//at head
-									WMhead = curr->next;
-								}
-								else{
-									prev->next = curr->next;
-
-								}
-							}
-							prev = curr;
-							curr = curr->next;
-						}
-						//free(curr);
-						//free(prev);
-						struct WatchMailNode *temp = WMhead;
-						while (temp != NULL){
-							printf("%s\n",temp->filename);
-							temp = temp->next;
-						}
-					}
-					else{
-						printf("Error: invalid input\n");
-					}
-				}
-				else{
-					printf("Error: Not enough arguments\n");
-				}
-
-			}
-
-			//If the user types watchuser we need to start watching that user
 			else if (strcmp(args[0],"watchuser")==0){
-				//Check that they specify which user to watch
 				if (args[1]==NULL){
 					printf("Need to give a username to watch\n");
 				}
 				else if (args[2]==NULL){
-					//If the thread to watch users has not been created yet we need to create it
+					//on
 					if (watchUserThreadCreated==0){
 						pthread_create(&threads[99],NULL,watchUserThread,NULL);
 					}
-					//Add the user to the list of users being watched by the thread
 					watchOn = addUserToList(watchOn,args[1],mutexOn);
 				}
 				else if (args[3]!=NULL){
 					printf("Too many arguments\n");
 				}
 				else{
+					//off
 					if (strcmp(args[2],"off")!=0){
 						printf("Only valid second argument is 'off'\n");
 					}
 					else{
-						//Stop watching a given user
 						watchOn = removeUserFromList(watchOn,args[1],mutexOn);
+					}
+				}
+			}
+
+			else if (access(args[0],X_OK)==0){
+				if (strcmp(background,"&")==0){
+					struct execArgs* currentArgs = (struct execArgs*)malloc(sizeof(struct execArgs));
+					currentArgs->args = (char**) args;
+					currentArgs->pathlist = (struct pathelement*) pathlist;
+					currentArgs->envp = (char**) envp;
+					currentArgs->which = 0;
+					if(threadCurr<98){
+						pthread_create(&threads[++threadCurr],NULL,runInBackground,(void *)currentArgs);
+					}
+				}
+				else{
+					int status;
+					pid_t pid;
+					pid = fork();
+					if (pid==0){
+						execve(args[0], args, envp );
+					}
+					else {
+						pid_gl = pid;
+						waitpid(pid,&status, 0);
 					}
 				}
 			}
 			/*  else  program to exec */
 			/* find it */
 			/* do fork(), execve() and waitpid() */
-			else{
-				if (access(args[0],X_OK)==0){
-
-					//check to make sure we are not pipelining 
-					if (piped == 0){
-						//if we need to run this in the background create a new thread to run it
-						if (strcmp(background,"&")==0){
-							struct execArgs* currentArgs = (struct execArgs*)malloc(sizeof(struct execArgs));
-							currentArgs->args = (char**) args;
-							currentArgs->pathlist = (struct pathelement*) pathlist;
-							currentArgs->envp = (char**) envp;
-							currentArgs->which = 0;
-							if(threadCurr<98){
-								pthread_create(&threads[++threadCurr],NULL,runInBackground,(void *)currentArgs);
-							}
-						}
-						// else run it in the main thread
-						else{
-							int status;
-							pid_t pid;
-							pid = fork();
-
-							if (pid==0){
-
-								execve(args[0], args, envp );
-							}
-							else {
-								pid_gl = pid;
-								waitpid(pid,&status, WEXITSTATUS(status));
-							}
-						}
-
-					}
-					else{
-						execve(args[0], args, envp );
-					}
-
-				}
-				else if (access(which(args[0],pathlist),X_OK)==0){
-					int status;
-					args = CheckWCChars(args);
-
-					//check to make sure we are not pipelining
-					if (piped == 0){
-						//if we need to run this in the background create a new thread to run it
-						if (strcmp(background,"&")==0){
-							struct execArgs* currentArgs = (struct execArgs*)malloc(sizeof(struct execArgs));
-							currentArgs->args = (char**) args;
-							currentArgs->pathlist = (struct pathelement*) pathlist;
-							currentArgs->envp = (char**) envp;
-							currentArgs->which = 1;
-							if(threadCurr<98){
-								pthread_create(&threads[++threadCurr],NULL,runInBackground,(void *)currentArgs);
-							}
-						}
-						//else run in the main thread
-						else{
-							pid_t pid;
-							pid = fork();
-							if (pid==0){
-								execve(which(args[0],pathlist), args, envp );
-							}
-							else {
-								pid_gl = pid;
-								waitpid(pid,&status, WEXITSTATUS(status));
-
-							}
-						}
-					}
-					else{
-						execve(which(args[0],pathlist), args, envp );
+			else if (access(which(args[0],pathlist),X_OK)==0){
+				if (strcmp(background,"&")==0){
+					struct execArgs* currentArgs = (struct execArgs*)malloc(sizeof(struct execArgs));
+					currentArgs->args = (char**) args;
+					currentArgs->pathlist = (struct pathelement*) pathlist;
+					currentArgs->envp = (char**) envp;
+					currentArgs->which = 1;
+					if(threadCurr<98){
+						pthread_create(&threads[++threadCurr],NULL,runInBackground,(void *)currentArgs);
 					}
 				}
 				else{
-					int i;
-					if (args[0][0]== '.'||args[0][0]== '/'){
-						fprintf(stderr,"%s: Path does not exist\n",args[0]);
+					int status;
+					args = CheckWCChars(args);
+					pid_t pid;
+					pid = fork();
+					if (pid==0){
+						execve(which(args[0],pathlist), args, envp );
 					}
-					else{
-						fprintf(stderr, "%s: Command not found.\n", args[0]);
-					}
+					else {
+						pid_gl = pid;
+						waitpid(pid,&status, 0);					}
 				}
+			}
+
+
+			else {
+				if (args[0][0]== '.'||args[0][0]== '/'){
+					fprintf(stderr,"%s: Path does not exist\n",args[0]);
+				}
+				else{
+					fprintf(stderr, "%s: Command not found.\n", args[0]);
+				}
+
 			}
 		}
 		else{
@@ -821,14 +596,13 @@ int sh( int argc, char **argv, char **envp )
 				clearerr(stdin);
 			}
 		}
-		
-		// restore standard input, output, and error if any were changed.
+
 		if (redirectFlag == 1){
 			redirectFlag = 0;
 			close(1);
 			dup(saved_stdout);
 			close(saved_stdout);
-		}
+		}	
 		else if (redirectFlag == 2){
 			redirectFlag = 0;
 			close(1);
@@ -844,136 +618,22 @@ int sh( int argc, char **argv, char **envp )
 			dup(saved_stdin);
 			close(saved_stdin);
 		}
+
+
 	}
+
+
 	free(prompt);
 	free(commandline);
 	free(args);
 	free(aliases);
 	free(history);
+	//free(password_entry);
+	//free(homedir);
 	return 0;
 } /* sh() */
 
-
-void *watchMailThread(void *param){
-
-	struct WatchMailThreadParams *params = (struct WatchMailThreadParams *)param;
-	char *fileName = params->filename;
-	pthread_t tid1 = params->tid;
-
-	struct stat *fileInfo = (struct stat *)malloc(sizeof(struct stat));
-	stat(fileName, fileInfo);
-	off_t fileSize = (off_t)malloc(sizeof(off_t));
-	fileSize = fileInfo->st_size;
-
-	printf("File Size at start %lld\n",fileSize);
-
-	struct WatchMailNode *newNode = (struct WatchMailNode *)malloc(sizeof(struct WatchMailNode));
-
-	if (WMtail == NULL){
-		printf("WMT\n");
-		pthread_mutex_lock(&WatchMailMutex);
-		WMhead = newNode;
-		WMtail = WMhead;
-		WMhead->next = NULL;
-		pthread_mutex_unlock(&WatchMailMutex);
-	}
-	else{
-		printf("WMT else\n");
-		pthread_mutex_lock(&WatchMailMutex);
-		WMtail->next = newNode;
-		WMtail = newNode;
-		pthread_mutex_unlock(&WatchMailMutex);
-	}
-	pthread_mutex_lock(&WatchMailMutex);
-	WMtail->filename = fileName;
-	WMtail->tid = tid1;
-	pthread_mutex_unlock(&WatchMailMutex);
-
-	struct WatchMailNode *tempNode = WMhead;
-	printf("Linked List: \n");
-	while(tempNode !=NULL){
-		printf("%s\n",tempNode->filename);
-		tempNode = tempNode->next;
-	}
-
-	while(1){
-		stat(fileName,fileInfo);
-		off_t newFileSize = (off_t)malloc(sizeof(off_t));
-		newFileSize = fileInfo->st_size;
-		printf("New File Size %lld\n",newFileSize);
-		if (newFileSize > fileSize){
-			printf("\a\n"); //Should cause an audible beep!
-			struct timeval *currentTime = (struct timeval *)malloc(sizeof(struct timeval));
-			if (gettimeofday(currentTime,NULL)== 0){
-				char *time = ctime(&currentTime->tv_sec);
-				printf("BEEP You've Got Mail in %s at %s",fileName,time);
-			}
-			else{
-				printf("%s\n",strerror(errno));
-			}
-			fileSize = newFileSize;
-		}
-
-		sleep(20);
-	}
-}
-
-void *warnLoadThread(void *param){
-	warnLoadGl = *((float *)param);
-	while(1){
-
-		if(warnLoadGl == 0.0){
-			isThreadRunningGl = 0;
-			pthread_exit(&param);
-		}
-		else{
-			double loads[1];
-			if ( !get_load(loads) ) {
-				if ((float)(loads[0]/100.0f)>warnLoadGl){
-					printf("WARNING Load is:%f\n",(float)loads[0]/100.0f);
-				}
-			}
-		}
-		sleep(30);
-	}
-}
-
-
-int get_load(double *loads){
-	kstat_ctl_t *kc;
-	kstat_t *ksp;
-	kstat_named_t *kn;
-
-	kc = kstat_open();
-	if (kc == 0)
-	{
-		perror("kstat_open");
-		exit(1);
-	}
-
-	ksp = kstat_lookup(kc, "unix", 0, "system_misc");
-	if (ksp == 0)
-	{
-		perror("kstat_lookup");
-		exit(1);
-	}
-	if (kstat_read(kc, ksp,0) == -1)
-	{
-		perror("kstat_read");
-		exit(1);
-	}
-
-	kn = kstat_data_lookup(ksp, "avenrun_1min");
-	if (kn == 0)
-	{
-		fprintf(stderr,"not found\n");
-		exit(1);
-	}
-	loads[0] = kn->value.ul/(FSCALE/100);
-	kstat_close(kc);
-	return 0;
-
-}
+/* Helper Functions*/
 
 char **CheckWCChars(char **args){
 	char **newArgs = calloc(MAXARGS,sizeof(char*));
@@ -989,7 +649,7 @@ char **CheckWCChars(char **args){
 		strcpy(temp,args[k]);
 		int i;
 		for(i=0; temp[i]!='\0';i++){
-			if (temp[i]== '*' && !(wildcardStar==1) && !(wildcardQmark==1)){
+			if (temp[i]== '*' && !wildcardStar && !wildcardQmark){
 				glob_t globWC;
 				glob(temp,GLOB_NOCHECK,NULL,&globWC);
 				int j;
@@ -1000,7 +660,7 @@ char **CheckWCChars(char **args){
 				wildcardStar = 1;
 			}
 
-			else if (temp[i]== '?' && !(wildcardQmark==1) && !(wildcardStar==1)){
+			else if (temp[i]== '?' && !wildcardQmark && !wildcardStar){
 				glob_t globWC;
 				glob(temp,GLOB_NOCHECK,NULL,&globWC);
 				int j;
@@ -1011,7 +671,7 @@ char **CheckWCChars(char **args){
 				wildcardQmark = 1;
 			}
 		}
-		if (!(wildcardQmark==1)&& !(wildcardStar==1)){
+		if (!wildcardQmark && !wildcardStar){
 			newArgs[NACounter] = args[k];
 			NACounter++;
 		}
@@ -1058,8 +718,6 @@ char *SetDir(char **args,int currentPos){
 
 char *which(char *command, struct pathelement *pathlist )
 {
-	/* loop through pathlist until finding command and return it.  Return
-	   NULL when not found. */
 	char* filePath;
 	char* notFound = ": Command Not Found";
 	char* notFoundFull;
@@ -1069,15 +727,12 @@ char *which(char *command, struct pathelement *pathlist )
 		return("which: Too few arguments");
 	}
 	else{
-		//printf("Command is %s\n", command);
 		while (head!=NULL){
 			filePath = malloc(strlen(head->element)+2+strlen(command));
 			strcpy(filePath, head->element); /* copy name into the new var */
 			strcat(filePath,"/");
 			strcat(filePath, command);
-			//printf("FP: %s\n",filePath);
 			if( access( filePath, F_OK ) != -1 ) {
-				//printf("file exists\n");
 				return filePath;
 			}
 			head = head->next;
@@ -1089,11 +744,12 @@ char *which(char *command, struct pathelement *pathlist )
 		return notFoundFull;
 	}
 
+
+
 } /* which() */
 
 char *where(char *command, struct pathelement *pathlist )
 {
-	/* similarly loop through finding all locations of command */
 	char* filePath;
 	char* result;
 	struct pathelement * head = pathlist;
@@ -1126,7 +782,6 @@ char *where(char *command, struct pathelement *pathlist )
 
 } /* where() */
 
-
 char* cd(char* dest,char* previousDirectory){
 	if (dest==NULL){
 		dest = getenv("HOME");
@@ -1146,8 +801,7 @@ char* cd(char* dest,char* previousDirectory){
 
 void list ( char *dir )
 {
-	/* see man page for opendir() and readdir() and print out filenames for
-	   the directory passed */
+
 	if (dir == NULL){
 		DIR           *d;
 		struct dirent *dir;
@@ -1188,19 +842,21 @@ void list ( char *dir )
 
 struct HistoryNode* addToHistory(struct HistoryNode* tail, char* command){
 	struct HistoryNode* new = (struct HistoryNode*)malloc(sizeof(struct HistoryNode));
-	new->command = malloc(strlen(command)+1);
+	new->command = malloc(strlen(command)+1); 
 	strcpy(new->command,command);
 	if (tail!=NULL){
 		new->prev = tail;
 		new->next = NULL;
 		tail->next = new;
 	}
-	else{
+	else{ 
 		new->prev = NULL;
 		new->next = NULL;
 	}
 	return new;
 }
+
+
 
 void quit_sig_handler(int sig){
 	switch(sig){
@@ -1224,15 +880,9 @@ void quit_sig_handler(int sig){
 	fflush(stdout);
 }
 
-//This function creates a background thread for commands ran with &
 void* runInBackground(void* neededArgs){
-	//Keep track of the new thread
 	runningBackgroundThreads++;
-
-	//Get needed arguments
 	struct execArgs* currentArgs = (struct execArgs*) neededArgs;
-		
-	//Execute the function in this new thread
 	if (currentArgs->which==0){
 		int status;
 		pid_t pid;
@@ -1262,18 +912,13 @@ void* runInBackground(void* neededArgs){
 			runningBackgroundThreads--;
 		}
 	}
-	//Delete the thread
-	pthread_exit(NULL);
+	pthread_exit();
 }
 
-//This function adds nodes to the users linked list
 struct users* addUserToList(struct users* list, char* newUser, pthread_mutex_t l){
-	// Lock the list
 	pthread_mutex_lock(&l);
 	char* user = malloc(strlen(newUser));
 	strcpy(user,newUser);
-	
-	//If we have an empty list create a linked list with only this node
 	if (list==NULL){
 		struct users* newNode = (struct users*)malloc(sizeof(struct users*));
 		newNode->user = user;
@@ -1283,7 +928,6 @@ struct users* addUserToList(struct users* list, char* newUser, pthread_mutex_t l
 		pthread_mutex_unlock(&l);
 		return newNode;
 	}
-	//Else add it to the existing list
 	else{
 		struct users* current = list;
 		while (current->next!=NULL){
@@ -1299,12 +943,8 @@ struct users* addUserToList(struct users* list, char* newUser, pthread_mutex_t l
 		return list;
 	}
 }
-
-//This function removes nodes from the users linked list
 struct users* removeUserFromList(struct users* list, char* removeUser, pthread_mutex_t l){
-	//Lock the list
 	pthread_mutex_lock(&l);
-	//If there is a list, remove the member and update pointers
 	if (list!=NULL){
 		struct users* current = list;
 		if (strcmp(current->user,removeUser)==0){
@@ -1332,15 +972,12 @@ struct users* removeUserFromList(struct users* list, char* removeUser, pthread_m
 	return list;
 }
 
-//This function prints the users linked list
 void printUserList(struct users* list, pthread_mutex_t l){
-	//Lock the list
 	pthread_mutex_lock(&l);
 	printf("In here\n");
 	if (list==NULL){
-		printf("There are no entries\n");
+		printf("There are no entries\n");	
 	}
-	//iterate through and print each element
 	else{
 		printf("User: %s\n",list->user);
 		while (list->next!=NULL){
@@ -1352,29 +989,22 @@ void printUserList(struct users* list, pthread_mutex_t l){
 	pthread_mutex_unlock(&l);
 }
 
-//This function maintains the thread used to watch users logging on and off
 void* watchUserThread(void* args){
 	struct utmpx *up;
 	time_t retTime;
-
-	//Continually run this function checking for new log on and off's
 	while (1){
-		//Lock the thread
 		pthread_mutex_lock(&mutexOn);
 		setutxent();			/* start at beginning */
 		while ((up = getutxent() ))	/* get an entry */
 		{
 			struct users* current = watchOn;
-			//Check for each user
 			while (current!=NULL){
 				if ( up->ut_type == USER_PROCESS ){
 					if (strcmp(current->user,up->ut_user)==0){
-						//If we are waiting for him to be on and he is print he is on
 						if (current->isOn == 0){
 							printf("\n%s has logged on %s from %s\n", up->ut_user, up->ut_line, up ->ut_host);
 							current->isOn = 1;
 						}
-						//note that he is online during this check
 						current->foundThisTime = 1;
 					}
 				}
@@ -1382,9 +1012,7 @@ void* watchUserThread(void* args){
 			}
 		}
 		struct users* current = watchOn;
-		//Iterate through each user
 		while (current!=NULL){
-			//If a user is not online but used to be they logged off so print that
 			if (current->foundThisTime==0){
 				if(current->isOn == 1){
 					printf("\n%s has logged off\n",current->user);
@@ -1396,13 +1024,9 @@ void* watchUserThread(void* args){
 			}
 			current = current->next;
 		}
-		//Unlock the thread
 		pthread_mutex_unlock(&mutexOn);
-		//Wait 2 seconds then check again
 		retTime = time(0) + 2;     // Get finishing time.
-		while (time(0) < retTime);
+  		while (time(0) < retTime);
 	}
 }
-
-
 
