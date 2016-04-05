@@ -582,7 +582,6 @@ int sh( int argc, char **argv, char **envp )
           else if (strcmp(args[0],"warnload")==0){
               if (isThreadRunningGl ==1){
                   warnLoadGl = atof(args[1]);
-                  printf("warnLoadGl in if:%f and args %s\n", warnLoadGl, args[1]);
               }
               else{
                   pthread_t tid1;
@@ -630,6 +629,7 @@ int sh( int argc, char **argv, char **envp )
                       struct WatchMailNode *prev = NULL;
                       while(curr != NULL){
                           if (strcmp(curr->filename,args[1])==0){
+                              printf("filename matching thread: %s", curr->filename);
                               //cancel thread
                               pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
                               int error = pthread_cancel(curr->tid);
@@ -654,7 +654,7 @@ int sh( int argc, char **argv, char **envp )
                       //free(prev);
                       struct WatchMailNode *temp = WMhead;
                       while (temp != NULL){
-                          printf("%s\n",temp->filename);
+                          printf("Linked List: %s\n",temp->filename);
                           temp = temp->next;
                       }
                   }
@@ -872,7 +872,7 @@ void *watchMailThread(void *param){
             fileSize = newFileSize;
         }
        
-        sleep(20);
+        sleep(15);
     }
 }
 
@@ -889,6 +889,7 @@ void *warnLoadThread(void *param){
             if ( !get_load(loads) ) {
              if ((float)(loads[0]/100.0f)>warnLoadGl){
              printf("WARNING Load is:%f\n",(float)loads[0]/100.0f);
+             PrintPrompt();
              }
             }
         }
