@@ -595,15 +595,15 @@ int sh( int argc, char **argv, char **envp )
               
               if (args[1]!= NULL){
                   if (args[2] == NULL){
-                      char *fileName = (char *)malloc(sizeof(char)*100);
-                      fileName = NULL;
+                      char *fileName;
                       DIR           *d;
                       struct dirent *dir;
                       d = opendir(".");
                       if (d)	{
                           while ((dir = readdir(d)) != NULL) {
                               if (strcmp(args[1],dir->d_name) == 0){
-                                  fileName = dir->d_name;
+                                  fileName = (char *)malloc(sizeof(dir->d_name));
+                                  strcpy(fileName,dir->d_name);
                               }
                           }
                           closedir(d);
@@ -611,6 +611,7 @@ int sh( int argc, char **argv, char **envp )
                       else{
                           perror("opendir");
                       }
+                      
                       if(fileName != NULL){
                           pthread_t tid1;
                           struct WatchMailThreadParams *params = (struct WatchMailThreadParams *)malloc(sizeof(struct WatchMailThreadParams));
@@ -823,15 +824,12 @@ void *watchMailThread(void *param){
     
     struct stat *fileInfo = (struct stat *)malloc(sizeof(struct stat));
     stat(fileName, fileInfo);
-    off_t fileSize = (off_t)malloc(sizeof(off_t));
+    signed long long fileSize = (signed long long)malloc(sizeof(signed long long));
     fileSize = fileInfo->st_size;
-    
-    printf("File Size at start %lld\n",fileSize);
     
     struct WatchMailNode *newNode = (struct WatchMailNode *)malloc(sizeof(struct WatchMailNode));
     
     if (WMtail == NULL){
-        printf("WMT\n");
         pthread_mutex_lock(&WatchMailMutex);
         WMhead = newNode;
         WMtail = WMhead;
@@ -839,7 +837,6 @@ void *watchMailThread(void *param){
         pthread_mutex_unlock(&WatchMailMutex);
      }
      else{
-         printf("WMT else\n");
          pthread_mutex_lock(&WatchMailMutex);
          WMtail->next = newNode;
          WMtail = newNode;
@@ -859,7 +856,7 @@ void *watchMailThread(void *param){
     
     while(1){
         stat(fileName,fileInfo);
-        off_t newFileSize = (off_t)malloc(sizeof(off_t));
+        signed long long newFileSize = (signed long long)malloc(sizeof(signed long long));
         newFileSize = fileInfo->st_size;
         printf("New File Size %lld\n",newFileSize);
         if (newFileSize > fileSize){
